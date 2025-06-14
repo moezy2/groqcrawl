@@ -1,5 +1,5 @@
 fastapi
 uvicorn
 pydantic
-playwright
+cloudscraper
 nest_asyncio
