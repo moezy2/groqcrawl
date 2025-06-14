@@ -1,5 +1,6 @@
 fastapi
 uvicorn
 pydantic
-cloudscraper
 nest_asyncio
+git+https://github.com/zinzied/cloudscraper.git
+js2py
