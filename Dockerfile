@@ -1,6 +1,6 @@
 # Use a base image that includes Python and has common Playwright dependencies or allows easy installation
 # This specific image is recommended by Playwright for its compatibility
-FROM mcr.microsoft.com/playwright/python:v1.43.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.52.0-jammy
 
 # Set the working directory in the container
 WORKDIR /app
