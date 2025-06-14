@@ -137,17 +137,21 @@ async def scrape_and_notify_core():
 
             # debug snippet of content
             content = await page.content()
-            print(f"DEBUG: Page content snippet (500 chars): {content[:500].replace('\n',' ')}")
+            snippet = content[:500].replace('\n', ' ')
+            print(f"DEBUG: Page content snippet (500 chars): {snippet}")
 
             elems = await page.locator('a.development-card').all()
             print(f"DEBUG: Found {len(elems)} raw development-card elements.")
             for i, elt in enumerate(elems[:5], 1):
-                print(f"DEBUG sample href {i}: {await elt.get_attribute('href')}")
+                href = await elt.get_attribute('href')
+                print(f"DEBUG sample href {i}: {href}")
 
             for elt in elems:
                 href = await elt.get_attribute('href')
-                if href and LINK_SUBSTRING_FILTER in urljoin(TARGET_URL, href):
-                    current_links.add(urljoin(TARGET_URL, href))
+                if href:
+                    abs_url = urljoin(TARGET_URL, href)
+                    if LINK_SUBSTRING_FILTER in abs_url:
+                        current_links.add(abs_url)
 
             await browser.close()
     except Exception as e:
