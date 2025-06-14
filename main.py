@@ -1,10 +1,11 @@
 import os
 import re
+import asyncio
 from urllib.parse import urljoin
 import requests
 import psycopg2
 from flask import Flask, jsonify
-from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 
 print("DEBUG_APP: --- main.py script started execution ---")
 app = Flask(__name__)
@@ -17,19 +18,17 @@ TARGET_URL = (
     "search-area=15&minimum-bedrooms=2&min-monthly-rent=none&max-monthly-rent=none&"
     "lat=51.6267984&lng=-0.1587195&outside=0&show-advanced-form=0"
 )
-# Filter for property detail pages
 LINK_SUBSTRING_FILTER = "/programmes-strategies/housing-and-land/homes-londoners/search/property/"
 
 # Environment variables
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-DATABASE_URL = os.getenv("DATABASE_URL")  # ensure '?sslmode=require' is appended for Supabase
+DATABASE_URL = os.getenv("DATABASE_URL")  # include ?sslmode=require
 
 # --- Database Functions ---
 def get_db_connection():
     if not DATABASE_URL:
         print("ERROR_DB: DATABASE_URL not set.")
         return None
-    print("DEBUG_DB: Connecting to DB...")
     try:
         conn = psycopg2.connect(DATABASE_URL)
         print("DEBUG_DB: Connected to database.")
@@ -40,10 +39,8 @@ def get_db_connection():
 
 
 def initialize_db():
-    """Creates the 'scraped_links' table if it doesn't exist."""
     conn = get_db_connection()
     if not conn:
-        print("ERROR_DB: Skipping DB init.")
         return
     try:
         cur = conn.cursor()
@@ -65,7 +62,6 @@ def initialize_db():
 
 
 def load_extracted_links_from_db():
-    """Loads previously extracted links from the database."""
     conn = get_db_connection()
     if not conn:
         return set()
@@ -73,8 +69,7 @@ def load_extracted_links_from_db():
     try:
         cur = conn.cursor()
         cur.execute("SELECT url FROM scraped_links;")
-        rows = cur.fetchall()
-        for row in rows:
+        for row in cur.fetchall():
             links.add(row[0])
         print(f"DEBUG_DB: Loaded {len(links)} links from DB.")
     except Exception as e:
@@ -85,7 +80,6 @@ def load_extracted_links_from_db():
 
 
 def save_new_links_to_db(new_links):
-    """Saves new extracted links to the database."""
     if not new_links:
         print("DEBUG_DB: No new links to save.")
         return
@@ -109,52 +103,60 @@ def save_new_links_to_db(new_links):
     finally:
         conn.close()
 
-# --- Discord Webhook Function ---
+# --- Discord Webhook ---
 def send_discord_message(content):
-    """Sends a message to the configured Discord webhook."""
     if not DISCORD_WEBHOOK_URL:
         print("WARNING: DISCORD_WEBHOOK_URL not set.")
         return
     try:
-        resp = requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
+        resp = requests.post(DISCORD_WEBHOOK_URL, json={"content": content}, timeout=10)
         resp.raise_for_status()
         print("INFO: Discord message sent.")
     except Exception as e:
         print(f"ERROR: Discord message failed: {e}")
 
-# --- Scraping Logic ---
-def scrape_and_notify_core():
+# --- Scraping with Playwright ---
+async def scrape_and_notify_core():
     print(f"INFO: Starting scrape of {TARGET_URL}")
     existing_links = load_extracted_links_from_db()
     print(f"INFO: {len(existing_links)} existing links loaded.")
 
     try:
-        resp = requests.get(TARGET_URL, timeout=30)
-        resp.raise_for_status()
-        html = resp.text
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            page = await browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                                          )
+            await page.goto(TARGET_URL, timeout=60000)
+            await page.wait_for_selector('a.development-card', timeout=60000)
+
+            # optional scroll
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+            await asyncio.sleep(3)
+
+            elems = await page.locator('a.development-card').all()
+            print(f"DEBUG: Found {len(elems)} raw development-card elements.")
+            for i, elt in enumerate(elems[:5], 1):
+                href = await elt.get_attribute('href')
+                print(f"DEBUG sample href {i}: {href}")
+
+            current_links = set()
+            for elt in elems:
+                href = await elt.get_attribute('href')
+                if not href:
+                    continue
+                abs_url = urljoin(TARGET_URL, href)
+                if LINK_SUBSTRING_FILTER in abs_url:
+                    current_links.add(abs_url)
+
+            await browser.close()
+
     except Exception as e:
-        error_msg = f"HTTP request failed: {e}"
+        error_msg = f"Scraping error: {e}"
         print(f"ERROR: {error_msg}")
-        send_discord_message(f"🚨 Scraping Error: {error_msg}")
+        send_discord_message(f"🚨 {error_msg}")
         return {"status": "error", "message": error_msg}
 
-    soup = BeautifulSoup(html, "html.parser")
-    link_elements = soup.find_all("a", class_="development-card")
-    print(f"DEBUG: Found {len(link_elements)} raw development-card elements.")
-    for i, elt in enumerate(link_elements[:5], 1):
-        href = elt.get("href")
-        print(f"DEBUG sample href {i}: {href}")
-
-    current_links = set()
-    for elt in link_elements:
-        href = elt.get("href")
-        if not href:
-            continue
-        abs_url = urljoin(TARGET_URL, href)
-        if LINK_SUBSTRING_FILTER in abs_url:
-            current_links.add(abs_url)
     print(f"INFO: {len(current_links)} filtered links found.")
-
     new_links = current_links - existing_links
     print(f"INFO: {len(new_links)} new links detected.")
 
@@ -174,9 +176,9 @@ def scrape_and_notify_core():
 
 # --- Flask Routes ---
 @app.route('/scrape', methods=['GET'])
-def scrape_endpoint():
+async def scrape_endpoint():
     print("INFO: /scrape endpoint called.")
-    result = scrape_and_notify_core()
+    result = await scrape_and_notify_core()
     return jsonify(result)
 
 @app.route('/health', methods=['GET'])
@@ -184,7 +186,7 @@ def health_check():
     print("INFO: /health endpoint called.")
     return jsonify({"status": "healthy", "message": "Service is running."})
 
-# Initialize DB on startup
+# Initialize DB
 def main_init():
     initialize_db()
 
