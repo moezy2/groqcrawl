@@ -3,3 +3,4 @@ flask[async]
 psycopg2-binary
 gunicorn
 playwright
+beautifulsoup4
