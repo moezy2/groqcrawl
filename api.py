@@ -1,8 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
+import cloudscraper
 import nest_asyncio
-import asyncio
-from playwright.async_api import async_playwright
 
 nest_asyncio.apply()
 app = FastAPI()
@@ -10,16 +9,23 @@ app = FastAPI()
 class ScrapeRequest(BaseModel):
     url: str
 
-@app.post("/scrape")
-async def scrape(request: ScrapeRequest):
+@app.post("/scrape-cloud")
+def scrape_cloud(request: ScrapeRequest):
     try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
-            page = await context.new_page()
-            await page.goto(request.url, timeout=60000)
-            html = await page.content()
-            await browser.close()
-            return {"html": html}
+        scraper = cloudscraper.create_scraper(
+            interpreter='js2py',
+            browser='chrome',
+            delay=5,
+            allow_brotli=True
+        )
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        }
+        response = scraper.get(request.url, headers=headers, timeout=30)
+        return {
+            "status_code": response.status_code,
+            "url": request.url,
+            "html": response.text
+        }
     except Exception as e:
         return {"error": str(e)}
