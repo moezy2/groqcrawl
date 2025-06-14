@@ -33,7 +33,6 @@ def get_db_connection():
         return None
 
     # Redact sensitive parts for logging but confirm URL format
-    # Using re.sub for more robust redaction, protecting against variations
     logged_db_url = re.sub(r'(://[^:]+):[^@]+@', r'\1:********@', db_url)
     print(f"DEBUG_DB: Attempting to connect to DB using URL: {logged_db_url}")
     try:
@@ -151,10 +150,20 @@ async def scrape_and_notify_core():
             print("INFO: Navigating to the target URL...")
             await page.goto(TARGET_URL, timeout=60000) # 60 seconds timeout
             print("INFO: Page loaded. Waiting for dynamic content (if any)...")
-            await asyncio.sleep(5) # Give page a moment to render dynamic content
+            await asyncio.sleep(8) # Adjusted sleep duration for robustness (was 5)
+
+            # Added a print to show the current URL after navigation and sleep, for debugging
+            print(f"DEBUG: Current page URL after navigation and sleep: {page.url}")
+            
+            # Added a print to get the page's HTML content, to inspect if elements are loaded
+            page_content = await page.content()
+            print(f"DEBUG: Page content snippet (first 500 chars): {page_content[:500]}...")
+
 
             print("INFO: Attempting to find all links with class 'development-card'...")
             link_elements = await page.locator('a.development-card').all()
+            print(f"DEBUG: Number of raw 'development-card' link elements found: {len(link_elements)}")
+
 
             current_scraped_links = set()
             if link_elements:
@@ -162,15 +171,15 @@ async def scrape_and_notify_core():
                 for i, element in enumerate(link_elements):
                     href = await element.get_attribute('href')
                     if href:
-                        # Construct absolute URL
                         absolute_url = urljoin(TARGET_URL, href)
                         
-                        # Filter based on substring
                         if LINK_SUBSTRING_FILTER in absolute_url:
                             current_scraped_links.add(absolute_url)
-                            print(f"DEBUG: Processed link {i+1}: {absolute_url}")
+                            # Only print processed links for brevity
+                            # print(f"DEBUG: Processed link {i+1}: {absolute_url}") 
                         else:
-                            print(f"DEBUG: Skipped link {i+1} (filter mismatch): {absolute_url}")
+                            # print(f"DEBUG: Skipped link {i+1} (filter mismatch): {absolute_url}")
+                            pass # Skip printing for mismatch, reduce log verbosity unless deep debug is needed
                     else:
                         print(f"DEBUG: Link element {i+1} had no href attribute.")
             else:
@@ -180,11 +189,17 @@ async def scrape_and_notify_core():
 
             new_links = current_scraped_links - existing_links
             print(f"INFO: Found {len(new_links)} new unique links.")
+            # Print the actual new links for debugging
+            if new_links:
+                print("DEBUG: New links identified:")
+                for link in sorted(list(new_links)):
+                    print(f"- {link}")
+
 
             if new_links:
                 print(f"\n--- Found {len(new_links)} New Links! ---")
                 message_content = f"**New London Housing Listings Found!** ({len(new_links)} new links)\n"
-                max_links_in_message = 10 # Limit number of links in Discord message for brevity
+                max_links_in_message = 10 
                 for i, link in enumerate(sorted(list(new_links))):
                     if i < max_links_in_message:
                         message_content += f"- {link}\n"
@@ -207,7 +222,7 @@ async def scrape_and_notify_core():
             send_discord_message(f"🚨 **Scraping Error!**\n{error_message}")
             return {"status": "error", "message": error_message}
         finally:
-            if browser: # Ensure browser is closed only if it was successfully launched
+            if browser:
                 await browser.close()
                 print("INFO: Browser closed.")
 
@@ -215,20 +230,18 @@ async def scrape_and_notify_core():
 @app.route('/scrape', methods=['GET'])
 async def scrape_endpoint():
     """Endpoint to trigger the scraping process."""
-    print("Health check endpoint hit.") # This print was duplicated here from /health, adjusting.
-    print("Scrape endpoint hit. Initiating scraping process...")
+    print("INFO: Scrape endpoint hit. Initiating scraping process...") # Corrected print
     result = await scrape_and_notify_core()
     return jsonify(result)
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint for GitHub Actions/ping services."""
-    print("Health check endpoint hit.")
+    print("INFO: Health check endpoint hit.") # Clarified print
     return jsonify({"status": "healthy", "message": "Service is running."})
 
 # --- Application Startup ---
 # Initialize the database table when the application starts.
-# This code runs directly when Gunicorn (or Flask for local dev) imports this file.
 initialize_db()
 
 # This block is ONLY for local development. Gunicorn handles server startup on Render.
