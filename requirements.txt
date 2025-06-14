@@ -1,4 +1,5 @@
 fastapi
 uvicorn
-crawl4ai
+pydantic
 playwright
+nest_asyncio
