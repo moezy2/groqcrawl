@@ -22,7 +22,7 @@ LINK_SUBSTRING_FILTER = "/programmes-strategies/housing-and-land/homes-londoners
 
 # Environment variables
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-DATABASE_URL = os.getenv("DATABASE_URL")  # ensure '?sslmode=require' if using Supabase
+DATABASE_URL = os.getenv("DATABASE_URL")  # ensure '?sslmode=require' if needed
 
 # --- Database Functions ---
 def get_db_connection():
@@ -121,6 +121,7 @@ async def scrape_and_notify_core():
     existing_links = load_extracted_links_from_db()
     print(f"INFO: {len(existing_links)} existing links loaded.")
 
+    current_links = set()
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -130,26 +131,23 @@ async def scrape_and_notify_core():
                 "Chrome/114.0.0.0 Safari/537.36"
             ))
             await page.goto(TARGET_URL, timeout=60000)
-            await page.wait_for_selector('a.development-card', timeout=60000)
+            print("DEBUG: Page navigated to target; waiting for network idle...")
+            await page.wait_for_load_state("networkidle", timeout=60000)
+            await asyncio.sleep(8)
 
-            # Scroll to load lazy content
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-            await asyncio.sleep(3)
+            # debug snippet of content
+            content = await page.content()
+            print(f"DEBUG: Page content snippet (500 chars): {content[:500].replace('\n',' ')}")
 
             elems = await page.locator('a.development-card').all()
             print(f"DEBUG: Found {len(elems)} raw development-card elements.")
             for i, elt in enumerate(elems[:5], 1):
-                href = await elt.get_attribute('href')
-                print(f"DEBUG sample href {i}: {href}")
+                print(f"DEBUG sample href {i}: {await elt.get_attribute('href')}")
 
-            current_links = set()
             for elt in elems:
                 href = await elt.get_attribute('href')
-                if not href:
-                    continue
-                abs_url = urljoin(TARGET_URL, href)
-                if LINK_SUBSTRING_FILTER in abs_url:
-                    current_links.add(abs_url)
+                if href and LINK_SUBSTRING_FILTER in urljoin(TARGET_URL, href):
+                    current_links.add(urljoin(TARGET_URL, href))
 
             await browser.close()
     except Exception as e:
