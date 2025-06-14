@@ -1,5 +1,5 @@
 import os
-import re
+import threading
 import asyncio
 from urllib.parse import urljoin
 import requests
@@ -22,7 +22,7 @@ LINK_SUBSTRING_FILTER = "/programmes-strategies/housing-and-land/homes-londoners
 
 # Environment variables
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-DATABASE_URL = os.getenv("DATABASE_URL")  # include ?sslmode=require
+DATABASE_URL = os.getenv("DATABASE_URL")  # ensure '?sslmode=require' if using Supabase
 
 # --- Database Functions ---
 def get_db_connection():
@@ -97,7 +97,7 @@ def save_new_links_to_db(new_links):
             except Exception as e:
                 print(f"WARNING_DB: Failed to insert {link}: {e}")
         conn.commit()
-        print(f"DEBUG_DB: Saved {len(new_links)} new links.")
+        print(f"DEBUG_DB: Saved {len(new_links)} new links to DB.")
     except Exception as e:
         print(f"ERROR_DB: save_new_links failed: {e}")
     finally:
@@ -115,7 +115,7 @@ def send_discord_message(content):
     except Exception as e:
         print(f"ERROR: Discord message failed: {e}")
 
-# --- Scraping with Playwright ---
+# --- Core scraping logic ---
 async def scrape_and_notify_core():
     print(f"INFO: Starting scrape of {TARGET_URL}")
     existing_links = load_extracted_links_from_db()
@@ -124,12 +124,15 @@ async def scrape_and_notify_core():
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-            page = await browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-                                          )
+            page = await browser.new_page(user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "  
+                "AppleWebKit/537.36 (KHTML, like Gecko) "  
+                "Chrome/114.0.0.0 Safari/537.36"
+            ))
             await page.goto(TARGET_URL, timeout=60000)
             await page.wait_for_selector('a.development-card', timeout=60000)
 
-            # optional scroll
+            # Scroll to load lazy content
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
             await asyncio.sleep(3)
 
@@ -149,7 +152,6 @@ async def scrape_and_notify_core():
                     current_links.add(abs_url)
 
             await browser.close()
-
     except Exception as e:
         error_msg = f"Scraping error: {e}"
         print(f"ERROR: {error_msg}")
@@ -174,23 +176,24 @@ async def scrape_and_notify_core():
 
     return {"status": "success", "new_links_count": len(new_links)}
 
-# --- Flask Routes ---
+# --- Flask routes and threading ---
+def trigger_scrape():
+    asyncio.run(scrape_and_notify_core())
+
 @app.route('/scrape', methods=['GET'])
-async def scrape_endpoint():
-    print("INFO: /scrape endpoint called.")
-    result = await scrape_and_notify_core()
-    return jsonify(result)
+def scrape_endpoint():
+    print("INFO: /scrape endpoint called; triggering background job.")
+    thread = threading.Thread(target=trigger_scrape, daemon=True)
+    thread.start()
+    return jsonify({"status": "started"})
 
 @app.route('/health', methods=['GET'])
 def health_check():
     print("INFO: /health endpoint called.")
     return jsonify({"status": "healthy", "message": "Service is running."})
 
-# Initialize DB
-def main_init():
-    initialize_db()
-
-main_init()
+# Initialize DB on startup
+initialize_db()
 
 if __name__ == "__main__":
     print("DEBUG_APP: Running local Flask server.")
