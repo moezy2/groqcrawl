@@ -21,5 +21,5 @@ COPY . .
 EXPOSE 10000
 
 # Command to run your Gunicorn server
-# Ensure gunicorn is installed via requirements.txt
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:$PORT", "main:app"]
+# Using the shell form (without square brackets) so $PORT variable is expanded
+CMD gunicorn -w 1 -b 0.0.0.0:$PORT main:app
