@@ -1,5 +1,5 @@
-pydoll
 requests
 flask
 psycopg2-binary
 gunicorn
+playwright
