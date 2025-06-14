@@ -1,0 +1,35 @@
+name: Daily Scraper Trigger
+
+on:
+  schedule:
+    # This cron expression runs the job at 00:00 UTC (midnight) every day.
+    # You can adjust this to your preferred time. Render logs are also in UTC.
+    # Crontab format: MIN HOUR DOM MON DOW (e.g., '0 6 * * *' for 6 AM UTC)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # This allows you to manually trigger the workflow from the GitHub Actions tab
+
+jobs:
+  trigger-render-scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Service Health Check
+        run: |
+          # Retrieve the Render service URL from GitHub secrets
+          RENDER_SERVICE_URL="${{ secrets.RENDER_SERVICE_URL }}"
+          HEALTH_ENDPOINT="${RENDER_SERVICE_URL}/health"
+
+          echo "Pinging health endpoint: $HEALTH_ENDPOINT"
+          # The -f flag makes curl fail on HTTP errors (like 4xx or 5xx)
+          curl -f "$HEALTH_ENDPOINT" || { echo "Render service health check failed!"; exit 1; }
+
+      - name: Trigger Render Scraper Execution
+        run: |
+          RENDER_SERVICE_URL="${{ secrets.RENDER_SERVICE_URL }}"
+          SCRAPE_ENDPOINT="${RENDER_SERVICE_URL}/scrape"
+
+          echo "Triggering scrape endpoint: $SCRAPE_ENDPOINT"
+          # This curl command sends a request to your Flask app's /scrape endpoint
+          curl -f "$SCRAPE_ENDPOINT" || { echo "Render scrape trigger failed!"; exit 1; }
+        env:
+          # This environment variable makes the secret available to the step
+          RENDER_SERVICE_URL: ${{ secrets.RENDER_SERVICE_URL }}
