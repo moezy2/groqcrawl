@@ -3,9 +3,7 @@ services:
     name: groqcrawl
     env: python
     plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-      playwright install chromium
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api:app --host 0.0.0.0 --port 10000
     envVars:
       - key: PORT
