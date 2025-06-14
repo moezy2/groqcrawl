@@ -1,11 +1,13 @@
 import asyncio
-from pydoll.browser.chromium import Chrome
+# REMOVED: from pydoll.browser.chromium import Chrome
+from playwright.async_api import async_playwright # NEW IMPORT for Playwright
+
 import os
-import re # Not strictly used after DATABASE_URL change, but can keep for robustness
+import re
 from urllib.parse import urljoin
 import requests
-import psycopg2 # For PostgreSQL connectivity
-from flask import Flask, jsonify # For the web service
+import psycopg2 
+from flask import Flask, jsonify
 
 app = Flask(__name__)
 
@@ -16,7 +18,7 @@ LINK_SUBSTRING_FILTER = "/programmes-strategies/housing-and-land/homes-londoners
 # Environment variable for Discord Webhook. Render will provide this.
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# --- Database Functions ---
+# --- Database Functions (NO CHANGE HERE) ---
 def get_db_connection():
     """Establishes and returns a PostgreSQL database connection.
     Prioritizes DATABASE_URL (from Render's internal connection or external string).
@@ -30,7 +32,6 @@ def get_db_connection():
             print(f"ERROR: Could not connect to database using DATABASE_URL: {e}")
             return None
     else:
-        # Fallback for local testing if DATABASE_URL is not set (e.g., from .env file)
         print("ERROR: DATABASE_URL environment variable is not set. Cannot connect to database.")
         return None
 
@@ -86,10 +87,8 @@ def save_new_links_to_db(new_links_set):
         cur = conn.cursor()
         for link in new_links_set:
             try:
-                # ON CONFLICT (url) DO NOTHING prevents errors if a link somehow already exists
                 cur.execute("INSERT INTO scraped_links (url) VALUES (%s) ON CONFLICT (url) DO NOTHING;", (link,))
             except Exception as e:
-                # This log is for unexpected errors, as ON CONFLICT should handle duplicates
                 print(f"WARNING: Could not insert link {link} into DB: {e}") 
         conn.commit()
         print(f"DEBUG: Attempted to save {len(new_links_set)} new links to database.")
@@ -98,7 +97,7 @@ def save_new_links_to_db(new_links_set):
     finally:
         conn.close()
 
-# --- Discord Webhook Function ---
+# --- Discord Webhook Function (NO CHANGE HERE) ---
 def send_discord_message(message_content):
     """Sends a message to the configured Discord webhook."""
     if not DISCORD_WEBHOOK_URL:
@@ -110,38 +109,40 @@ def send_discord_message(message_content):
     }
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
-        response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status() 
         print("Discord message sent successfully!")
     except requests.exceptions.RequestException as e:
         print(f"Error sending Discord message: {e}")
 
-# --- Main Scraping Logic (now an async function for Flask) ---
+# --- Main Scraping Logic (UPDATED BROWSER LAUNCH) ---
 async def scrape_and_notify_core():
     print(f"Starting browser to scrape: {TARGET_URL}")
     
-    # Load previously scraped links from DB
     existing_links = load_extracted_links_from_db()
     print(f"Loaded {len(existing_links)} existing links from database.")
 
-    async with Chrome() as browser:
-        tab = await browser.start()
+    # Playwright's way of launching a browser
+    async with async_playwright() as p: # Initialize Playwright
+        browser = await p.chromium.launch() # Launch Chromium browser
+        page = await browser.new_page() # Create a new page
 
         try:
             print("Navigating to the target URL...")
-            await tab.go_to(TARGET_URL, timeout=60) 
+            await page.goto(TARGET_URL, timeout=60000) # Use page.goto
             print("Page loaded. Waiting for dynamic content (if any)...")
-            await asyncio.sleep(10) # Increased sleep duration for robustness
+            await asyncio.sleep(10)
 
             print("Attempting to find all links with class 'development-card'...")
-            # Using the specific CSS selector based on your inspection
-            all_links_elements = await tab.query('a.development-card', find_all=True, timeout=30)
+            # Use page.locator and all_text_contents() or evaluate()
+            # Playwright's locator is more robust than tab.query
+            link_elements = await page.locator('a.development-card').all()
 
             current_scraped_links = set()
-            if all_links_elements:
-                print(f"Found {len(all_links_elements)} potential 'development-card' links. Filtering and processing...")
+            if link_elements:
+                print(f"Found {len(link_elements)} potential 'development-card' links. Filtering and processing...")
                 print("DEBUG: HREFs found by selector:") 
-                for link_element in all_links_elements:
-                    href = link_element.get_attribute('href')
+                for element in link_elements:
+                    href = await element.get_attribute('href') # Get attribute from element object
                     if href:
                         print(f"  - {href}")
                         if LINK_SUBSTRING_FILTER in href:
@@ -159,7 +160,7 @@ async def scrape_and_notify_core():
             if new_links:
                 print(f"\n--- Found {len(new_links)} New Links! ---")
                 message_content = f"**New London Housing Listings Found!** ({len(new_links)} new links)\n"
-                max_links_in_message = 10 # Limit for Discord message length
+                max_links_in_message = 10 
                 for i, link in enumerate(sorted(list(new_links))):
                     if i < max_links_in_message:
                         message_content += f"- {link}\n"
@@ -169,7 +170,7 @@ async def scrape_and_notify_core():
                 
                 send_discord_message(message_content)
 
-                save_new_links_to_db(new_links) # Save only the truly new ones
+                save_new_links_to_db(new_links) 
                 print(f"Database updated with {len(new_links)} new links.")
             else:
                 print("\nNo new links found since the last check.")
@@ -183,10 +184,10 @@ async def scrape_and_notify_core():
             send_discord_message(f"🚨 **Scraping Error!**\n{error_message}")
             return {"status": "error", "message": error_message}
         finally:
-            await tab.close()
-            print("Browser tab closed.")
+            await browser.close() # Close browser when done
+            print("Browser closed.")
 
-# --- Flask Routes ---
+# --- Flask Routes (NO CHANGE HERE) ---
 @app.route('/scrape', methods=['GET'])
 async def scrape_endpoint():
     """Endpoint to trigger the scraping process."""
@@ -199,11 +200,7 @@ def health_check():
     """Simple health check endpoint for GitHub Actions/ping services."""
     return jsonify({"status": "healthy", "message": "Service is running."})
 
-# --- Application Startup ---
+# --- Application Startup (NO CHANGE HERE) ---
 if __name__ == "__main__":
-    # Initialize the database table when the application starts
-    # This will run once when Flask starts (e.g., when gunicorn starts the app)
     initialize_db() 
-    # For local development, run with Flask's built-in server
     app.run(debug=True, host='0.0.0.0', port=5000)
-    # For Render deployment, gunicorn will manage the server.
