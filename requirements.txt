@@ -1,6 +1,5 @@
-requests
-flask[async]
-psycopg2-binary
+flask
+# Gunicorn for production server
 gunicorn
-playwright
-beautifulsoup4
+# Install Pydoll directly from GitHub, since it's not yet on PyPI
+git+https://github.com/autoscrape-labs/pydoll.git
