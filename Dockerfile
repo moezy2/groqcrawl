@@ -1,8 +1,9 @@
 # Use a base image with Python
 FROM python:3.11-slim
 
-# Install system dependencies for Chrome
+# Install system dependencies and Chromium for Pydoll
 RUN apt-get update && apt-get install -y \
+    chromium \
     curl \
     fonts-liberation \
     libnss3 \
