@@ -145,6 +145,9 @@ async def scrape_and_notify_core():
             html = await page.content()
             snippet = html[:300].replace('\n', ' ')
             print(f"DEBUG_HTML: Snippet: {snippet}")
+            # Check presence of class in HTML
+            class_count = snippet.count('development-card')
+            print(f"DEBUG_HTML: 'development-card' occurrences in snippet: {class_count}")
 
             elements = await page.locator('a.development-card').all()
             print(f"DEBUG: Found {len(elements)} <a.development-card> elements.")
