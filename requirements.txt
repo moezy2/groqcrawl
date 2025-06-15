@@ -1,5 +1,3 @@
-flask
-# Gunicorn for running the Flask app in production
-gunicorn
-# Pydoll from PyPI for browser automation
-pydoll-python
+flask==2.3.3
+gunicorn==21.2.0
+pydoll-python==0.3.0
