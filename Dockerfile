@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 # Install system dependencies and Chromium for Pydoll
 RUN apt-get update && apt-get install -y \
-    chromium-browser \
+    chromium \
     curl \
     fonts-liberation \
     libnss3 \
@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 # Create symlink so Pydoll can find the browser
-RUN ln -s /usr/bin/chromium-browser /usr/bin/google-chrome
+RUN ln -s /usr/bin/chromium /usr/bin/google-chrome
 
 # Install Pydoll/Chromium automatically via pydoll-python
 COPY requirements.txt ./
