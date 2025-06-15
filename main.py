@@ -1,42 +1,45 @@
 import os
 import asyncio
 from flask import Flask, request, jsonify, Response
-from pydoll import PyDoll
+from playwright.async_api import async_playwright
 
 app = Flask(__name__)
 
 async def fetch_full_html(url: str) -> str:
     try:
-        # Initialize Pydoll with Chrome options for containerized environment
-        browser = PyDoll(
-            browser='chrome',
-            headless=True,
-            chrome_binary='/usr/bin/chromium-browser',
-            chrome_options=[
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-extensions',
-                '--disable-plugins',
-                '--disable-images',
-                '--user-agent=Mozilla/5.0 (Linux; x86_64) AppleWebKit/537.36'
-            ]
-        )
-        
-        # Navigate to URL and get content
-        await browser.goto(url)
-        await browser.wait_for_load_state('networkidle')
-        await asyncio.sleep(2)
-        
-        # Get the HTML content
-        html = await browser.content()
-        
-        # Close browser
-        await browser.close()
-        
-        return html
+        async with async_playwright() as p:
+            # Launch browser with necessary options for containerized environment
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-web-security',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-extensions',
+                    '--disable-plugins',
+                    '--disable-images',
+                    '--user-agent=Mozilla/5.0 (Linux; x86_64) AppleWebKit/537.36'
+                ]
+            )
+            
+            # Create a new page
+            page = await browser.new_page()
+            
+            # Navigate to URL
+            await page.goto(url, wait_until='networkidle', timeout=30000)
+            
+            # Optional: Wait a bit more for dynamic content
+            await asyncio.sleep(2)
+            
+            # Get the HTML content
+            html = await page.content()
+            
+            # Close browser
+            await browser.close()
+            
+            return html
     except Exception as e:
         raise Exception(f"Browser automation failed: {str(e)}")
 
