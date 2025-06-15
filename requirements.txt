@@ -1,5 +1,5 @@
 flask
-# Gunicorn for production server
+# Gunicorn for running the Flask app in production
 gunicorn
-# Install Pydoll directly from GitHub, since it's not yet on PyPI
-git+https://github.com/pydoll/pydoll-python.git@main
+# Pydoll from PyPI for browser automation
+pydoll-python
