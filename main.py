@@ -6,20 +6,14 @@ from pydoll.browser.options import ChromiumOptions
 
 app = Flask(__name__)
 
-# --- Configuration ---
-# (No proxy needed; Pydoll will handle rendering and captcha bypass natively)
-
 async def fetch_full_html(url: str) -> str:
     options = ChromiumOptions()
-    # Some container environments require no-sandbox
     options.add_argument('--no-sandbox')
     async with Chrome(options=options) as browser:
         tab = await browser.start()
         await tab.go_to(url)
-        # Wait for network and JS to finish loading
         await tab.wait_for_load_state('networkidle')
         await asyncio.sleep(2)
-        # Retrieve rendered HTML
         html = await tab.content()
     return html
 
