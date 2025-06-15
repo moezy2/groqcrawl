@@ -2,4 +2,4 @@ flask
 # Gunicorn for production server
 gunicorn
 # Install Pydoll directly from GitHub, since it's not yet on PyPI
-git+https://github.com/autoscrape-labs/pydoll.git
+git+https://github.com/pydoll/pydoll-python.git@main
