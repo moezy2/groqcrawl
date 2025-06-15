@@ -8,6 +8,8 @@ app = Flask(__name__)
 
 async def fetch_full_html(url: str) -> str:
     options = ChromiumOptions()
+    # Point Pydoll to the installed Chromium binary
+    options.binary_location = '/usr/bin/chromium'
     options.add_argument('--no-sandbox')
     async with Chrome(options=options) as browser:
         tab = await browser.start()
